@@ -39,16 +39,15 @@ local bug_tradepost = {
     height = 256,
     scale = 0.5
   },
-  open_sound = { filename = "__base__/sound/wooden-chest-open.ogg" },
-  close_sound = { filename = "__base__/sound/wooden-chest-close.ogg" },
+  open_sound = { filename = "__base__/sound/wooden-chest-open.ogg", volume = 0.7 },
+  close_sound = { filename = "__base__/sound/wooden-chest-close.ogg", volume = 0.7 },
 
-  -- circuit network
   circuit_wire_connection_point = circuit_connector_definitions["chest"].points,
   circuit_connector_sprites = circuit_connector_definitions["chest"].sprites,
   circuit_wire_max_distance = 12
 }
 
--- contract board - kontener z 1 slotem, kontrolowany w control.lua
+-- contract board - kontener z 1 slotem, tylko do GUI i ikon
 local contract_board = {
   type = "container",
   name = "sbt-contract-board",
@@ -69,8 +68,8 @@ local contract_board = {
     height = 600,
     scale = 0.5
   },
-  open_sound = { filename = "__base__/sound/wooden-chest-open.ogg" },
-  close_sound = { filename = "__base__/sound/wooden-chest-close.ogg" }
+  open_sound = { filename = "__base__/sound/wooden-chest-open.ogg", volume = 0.7 },
+  close_sound = { filename = "__base__/sound/wooden-chest-close.ogg", volume = 0.7 }
 }
 
 data:extend({
