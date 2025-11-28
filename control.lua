@@ -88,7 +88,6 @@ local function migrate_colonies()
 end
 
 local function build_item_caches()
-  -- statyczne listy, bez game.item_prototypes
   storage.intermediate_items = {
     "iron-ore",
     "copper-ore",
@@ -122,8 +121,8 @@ local function init_storage()
   storage.players           = storage.players           or {}
   storage.colonies          = storage.colonies          or {}
   storage.next_colony_id    = storage.next_colony_id    or 1
-  storage.board_render_objs = storage.board_render_objs or {}  -- [colony_id] -> {render objects}
-  storage.saved_offers      = storage.saved_offers      or {}  -- [colony_id] -> offers
+  storage.board_render_objs = storage.board_render_objs or {}
+  storage.saved_offers      = storage.saved_offers      or {}
 
   migrate_colonies()
   build_item_caches()
@@ -174,7 +173,6 @@ end
 script.on_event(defines.events.on_runtime_mod_setting_changed, function(e)
   if e.setting_type ~= "runtime-global" then return end
   if not e.setting:match("^ftt%-") then return end
-  -- oferty są w sejfie, nie trzeba nic przebudowywać
 end)
 
 -------------------------------------------------
@@ -366,13 +364,13 @@ refresh_board_icons = function(colony)
 end
 
 -------------------------------------------------
--- circuit network: wybór ofert
+-- circuit network
+-- sterowanie tylko z contract board
 -------------------------------------------------
 
-local function get_requested_items_from_circuit(ent)
-  if not (ent and ent.valid) then return nil end
-
-  local requested = {}
+local function collect_requested_from_entity(ent, requested)
+  if not (ent and ent.valid) then return requested end
+  requested = requested or {}
 
   local function scan_network(net)
     if not net then return end
@@ -388,6 +386,12 @@ local function get_requested_items_from_circuit(ent)
   scan_network(ent.get_circuit_network(defines.wire_type.red))
   scan_network(ent.get_circuit_network(defines.wire_type.green))
 
+  return requested
+end
+
+local function get_requested_items_for_colony(colony)
+  local requested = {}
+  requested = collect_requested_from_entity(colony.board_entity, requested)
   if next(requested) then
     return requested
   end
@@ -412,19 +416,29 @@ local function process_colony_trade_round_robin(colony)
   colony.partial  = colony.partial  or {}
   colony.rr_index = colony.rr_index or 1
 
-  local requested = get_requested_items_from_circuit(ent)
+  local requested = get_requested_items_for_colony(colony)
   local restrict_by_request = requested ~= nil
 
   local idxs = {}
+
   for i = 1, #offers do
-    if colony.enabled[i] ~= false then
-      local off = offers[i]
-      local give_name = off and off.give and off.give.name
-      if not restrict_by_request or (give_name and requested[give_name]) then
+    local off = offers[i]
+    local give_name = off and off.give and off.give.name
+
+    if restrict_by_request then
+      -- jest sygnal z contract board
+      -- wystarczy ujemny sygnal give.name, GUI ignorowane
+      if give_name and requested[give_name] then
+        table.insert(idxs, i)
+      end
+    else
+      -- brak sygnalu, dziala stary tryb z GUI
+      if colony.enabled[i] ~= false then
         table.insert(idxs, i)
       end
     end
   end
+
   if #idxs == 0 then return end
 
   local start = colony.rr_index
@@ -435,7 +449,6 @@ local function process_colony_trade_round_robin(colony)
     local off = offers[idx]
     if off and off.give and off.cost and #off.cost > 0 then
       if #off.cost == 1 then
-        -- prosty case: 1 rodzaj waluty, zbieramy po 1 sztuce
         local cost = off.cost[1]
         local cur_name = cost.name
         if inv.get_item_count(cur_name) > 0 then
@@ -454,7 +467,6 @@ local function process_colony_trade_round_robin(colony)
           colony.partial[idx] = math.max(0, partial)
         end
       else
-        -- case wielu walut: albo wszystko jest, albo nic
         local can_pay = true
         for _, c in ipairs(off.cost) do
           if inv.get_item_count(c.name) < c.count then
@@ -726,6 +738,16 @@ open_trade_gui = function(player, colony)
   header.add{ type = "label", caption = "Oferta" }
   header.add{ type = "label", caption = "Waluta" }
 
+  local spacer = header.add{ type = "empty-widget" }
+  spacer.style.horizontally_stretchable = true
+
+  header.add{
+    type = "button",
+    name = "sbt_uncheck_all_offers",
+    caption = "✕",
+    tooltip = "Odznacz wszystkie oferty"
+  }
+
   local offers = get_colony_offers(colony) or {}
 
   for i, off in ipairs(offers) do
@@ -939,8 +961,40 @@ script.on_event(defines.events.on_gui_click, function(e)
   if not (element and element.valid) then return end
   local player = game.get_player(e.player_index)
   if not player then return end
+
   if element.name == "sbt_trade_close" then
     close_trade_gui(player)
+    return
+  end
+
+  if element.name == "sbt_uncheck_all_offers" then
+    local st = get_player_state(player.index)
+    local colony_id = st.open_colony_id
+    if not colony_id then return end
+
+    local colony = storage.colonies and storage.colonies[colony_id]
+    if not colony then return end
+
+    local frame = player.gui.screen.sbt_trade_frame
+    if not (frame and frame.valid) then return end
+
+    local flow = frame.children[1]
+    if not (flow and flow.valid) then return end
+
+    local offers = get_colony_offers(colony) or {}
+    colony.enabled = colony.enabled or {}
+
+    for i = 1, #offers do
+      local row = flow["sbt_offer_row_" .. i]
+      if row and row.valid then
+        local chk = row["sbt_offer_enable_" .. i]
+        if chk and chk.valid then
+          chk.state = false
+        end
+      end
+      colony.enabled[i] = false
+    end
+
     return
   end
 end)
