@@ -3,26 +3,30 @@
 local util = require("util")
 
 -- constants
-local BUG_FORCE       = "bugs-trade"
-local BOARD_NAME      = "sbt-contract-board"
-local TRADEPOST_NAME  = "sbt-bug-tradepost"
+local BUG_FORCE      = "bugs-trade"
+local BOARD_NAME     = "sbt-contract-board"
+local TRADEPOST_NAME = "sbt-bug-tradepost"
 
 -- board icon area inside selection_box
 local BOARD_SEL_BOX = { left = -2.5, top = -3.3, right = 2.5, bottom = 1.0 }
 local BOARD_MARGIN  = 0.35
 
 -- sprite sizing
-local ITEM_BASE_PX   = 64
-local PX_PER_TILE    = 32
+local ITEM_BASE_PX = 64
+local PX_PER_TILE  = 32
 
 -- forward declarations
 local clear_board_icons
 local draw_board_icons
 local refresh_board_icons
 local get_colony_offers
+local find_colony_by_tradepost
+local find_colony_by_board
+local create_or_get_colony_from_board
+local open_trade_gui
 
 -------------------------------------------------
--- helpers
+-- helpers: nazwy kolonii
 -------------------------------------------------
 
 local function make_colony_name(kind, mode)
@@ -41,62 +45,21 @@ local function get_colony_name(colony)
   return make_colony_name(colony.kind or "generic", colony.mode or "normal")
 end
 
-local function ensure_exchange_singleton_from_existing()
-  storage.exchange_singleton = storage.exchange_singleton or { choc_to_alc = false, alc_to_choc = false }
-  for _, c in pairs(storage.colonies or {}) do
-    if c.mode == "exchange_choc_to_alc" then storage.exchange_singleton.choc_to_alc = true end
-    if c.mode == "exchange_alc_to_choc" then storage.exchange_singleton.alc_to_choc = true end
-  end
-end
+-------------------------------------------------
+-- storage init i migracja
+-------------------------------------------------
 
 local function rebuild_entity_index()
   storage.entity_to_colony = {}
   for id, c in pairs(storage.colonies or {}) do
     if c.tradepost and c.tradepost.valid and c.tradepost.unit_number then
-      storage.entity_to_colony[c.tradepost.unit_number] = c
+      storage.entity_to_colony[c.tradepost.unit_number] = id
+    end
+    if c.board_entity and c.board_entity.valid and c.board_entity.unit_number then
+      storage.entity_to_colony[c.board_entity.unit_number] = id
     end
   end
 end
-
--------------------------------------------------
--- item caches
--------------------------------------------------
-
-local function build_item_caches()
-  -- podstawowe surowce i posrednie
-  storage.intermediate_items = {
-    "iron-ore",
-    "copper-ore",
-    "iron-plate",
-    "copper-plate",
-    "steel-plate",
-    "stone",
-    "coal",
-    "iron-gear-wheel",
-    "electronic-circuit",
-    "advanced-circuit",
-    "processing-unit",
-    "battery",
-    "low-density-structure",
-    "engine-unit",
-    "electric-engine-unit"
-    -- bez rocket-control-unit zeby nie crashowac na mapach gdzie go nie ma
-  }
-
-  storage.science_items = {
-    "automation-science-pack",
-    "logistic-science-pack",
-    "military-science-pack",
-    "chemical-science-pack",
-    "production-science-pack",
-    "utility-science-pack",
-    "space-science-pack"
-  }
-end
-
--------------------------------------------------
--- storage init and migration
--------------------------------------------------
 
 local function migrate_colonies()
   if not storage.colonies then return end
@@ -121,23 +84,53 @@ local function migrate_colonies()
     end
   end
 
-  ensure_exchange_singleton_from_existing()
   rebuild_entity_index()
+end
+
+local function build_item_caches()
+  -- statyczne listy, bez game.item_prototypes
+  storage.intermediate_items = {
+    "iron-ore",
+    "copper-ore",
+    "iron-plate",
+    "copper-plate",
+    "steel-plate",
+    "stone",
+    "coal",
+    "iron-gear-wheel",
+    "electronic-circuit",
+    "advanced-circuit",
+    "processing-unit",
+    "battery",
+    "low-density-structure",
+    "engine-unit",
+    "electric-engine-unit"
+  }
+
+  storage.science_items = {
+    "automation-science-pack",
+    "logistic-science-pack",
+    "military-science-pack",
+    "chemical-science-pack",
+    "production-science-pack",
+    "utility-science-pack",
+    "space-science-pack"
+  }
 end
 
 local function init_storage()
   storage.players           = storage.players           or {}
   storage.colonies          = storage.colonies          or {}
   storage.next_colony_id    = storage.next_colony_id    or 1
-  storage.board_render_objs = storage.board_render_objs or {}  -- [colony_id] -> {LuaRenderObject}
-  storage.saved_offers      = storage.saved_offers      or {}  -- [colony_id] -> offers table
+  storage.board_render_objs = storage.board_render_objs or {}  -- [colony_id] -> {render objects}
+  storage.saved_offers      = storage.saved_offers      or {}  -- [colony_id] -> offers
 
   migrate_colonies()
   build_item_caches()
 end
 
 -------------------------------------------------
--- forces
+-- force robali
 -------------------------------------------------
 
 local function ensure_bug_force()
@@ -153,7 +146,7 @@ local function ensure_bug_force()
 end
 
 -------------------------------------------------
--- settings
+-- settings dla wymiany
 -------------------------------------------------
 
 local function get_exchange_values()
@@ -174,27 +167,18 @@ local function get_offer_generosity()
   local g = settings.global
   local s = g["ftt-offer-generosity"]
   if not s then return 1.0 end
-  local v = s.value or 10
-  return math.max(1, math.min(50, v))
+  local v = s.value or 3
+  return math.max(1, math.min(10, v))
 end
 
 script.on_event(defines.events.on_runtime_mod_setting_changed, function(e)
   if e.setting_type ~= "runtime-global" then return end
   if not e.setting:match("^ftt%-") then return end
-
-  if not storage.exchange_singleton then
-    storage.exchange_singleton = {}
-  end
-
-  local ex = get_exchange_values()
-  storage.exchange_singleton.choc_to_alc_input  = ex.choc_to_alc_input
-  storage.exchange_singleton.choc_to_alc_output = ex.choc_to_alc_output
-  storage.exchange_singleton.alc_to_choc_input  = ex.alc_to_choc_input
-  storage.exchange_singleton.alc_to_choc_output = ex.alc_to_choc_output
+  -- oferty są w sejfie, nie trzeba nic przebudowywać
 end)
 
 -------------------------------------------------
--- item pool for colonies
+-- item pool dla kolonii
 -------------------------------------------------
 
 local function get_item_pool_for_colony(colony)
@@ -206,7 +190,7 @@ local function get_item_pool_for_colony(colony)
 end
 
 -------------------------------------------------
--- offer generation for normal colonies
+-- generowanie ofert (normalnych)
 -------------------------------------------------
 
 local function build_random_offers_for_normal_colony(colony)
@@ -215,7 +199,7 @@ local function build_random_offers_for_normal_colony(colony)
   if not pool or #pool == 0 then return offers end
 
   local currency = colony.currency or "sbt-alcohol"
-  local count_offers = math.random(5, 20)
+  local count_offers = math.random(6, 18)
   local used = {}
 
   local function pick_unique_item()
@@ -237,27 +221,22 @@ local function build_random_offers_for_normal_colony(colony)
     local item = pick_unique_item()
     if not item then break end
 
-    local stack = 100
-
-    local base_amount = math.max(1, math.floor(stack * (0.4 + math.random() * 1.6)))
+    local base_amount = math.max(1, math.floor(50 * (0.5 + math.random() * 2.0)))
     base_amount = math.min(base_amount, 400)
 
-    local cost_count = math.max(1, math.floor(base_amount / (generosity * 1.1)))
+    local cost_count = math.max(1, math.floor(base_amount / (generosity * 1.2)))
 
-    table.insert(
-      offers,
-      {
-        give = { name = item, count = base_amount },
-        cost = { { name = currency, count = cost_count } }
-      }
-    )
+    table.insert(offers, {
+      give = { name = item, count = base_amount },
+      cost = { { name = currency, count = cost_count } }
+    })
   end
 
   return offers
 end
 
 -------------------------------------------------
--- get offers with special exchange modes
+-- oferty z sejfem i trybami wymiany
 -------------------------------------------------
 
 get_colony_offers = function(colony)
@@ -303,7 +282,7 @@ get_colony_offers = function(colony)
 end
 
 -------------------------------------------------
--- board icon rendering
+-- renderowanie ikon na tablicy
 -------------------------------------------------
 
 local function safe_draw_sprite(params, store)
@@ -387,7 +366,7 @@ refresh_board_icons = function(colony)
 end
 
 -------------------------------------------------
--- circuit helper for requested items
+-- circuit network: wybór ofert
 -------------------------------------------------
 
 local function get_requested_items_from_circuit(ent)
@@ -416,7 +395,7 @@ local function get_requested_items_from_circuit(ent)
 end
 
 -------------------------------------------------
--- fair trade loop round robin with trickle currency
+-- przetwarzanie handlu
 -------------------------------------------------
 
 local function process_colony_trade_round_robin(colony)
@@ -456,6 +435,7 @@ local function process_colony_trade_round_robin(colony)
     local off = offers[idx]
     if off and off.give and off.cost and #off.cost > 0 then
       if #off.cost == 1 then
+        -- prosty case: 1 rodzaj waluty, zbieramy po 1 sztuce
         local cost = off.cost[1]
         local cur_name = cost.name
         if inv.get_item_count(cur_name) > 0 then
@@ -474,6 +454,7 @@ local function process_colony_trade_round_robin(colony)
           colony.partial[idx] = math.max(0, partial)
         end
       else
+        -- case wielu walut: albo wszystko jest, albo nic
         local can_pay = true
         for _, c in ipairs(off.cost) do
           if inv.get_item_count(c.name) < c.count then
@@ -510,11 +491,12 @@ local function is_same_pos(a, b, radius_sq)
   return (dx * dx + dy * dy) <= (radius_sq or 1)
 end
 
-local function find_colony_by_entity(ent)
+find_colony_by_tradepost = function(ent)
   if not (ent and ent.valid) then return nil end
   local unit = ent.unit_number
   if unit and storage.entity_to_colony and storage.entity_to_colony[unit] then
-    return storage.entity_to_colony[unit]
+    local id = storage.entity_to_colony[unit]
+    return storage.colonies and storage.colonies[id] or nil
   end
 
   local pos = ent.position
@@ -529,28 +511,32 @@ local function find_colony_by_entity(ent)
   return nil
 end
 
+find_colony_by_board = function(ent)
+  if not (ent and ent.valid) then return nil end
+  local unit = ent.unit_number
+  if unit and storage.entity_to_colony and storage.entity_to_colony[unit] then
+    local id = storage.entity_to_colony[unit]
+    return storage.colonies and storage.colonies[id] or nil
+  end
+
+  local pos = ent.position
+  local surf = ent.surface
+  if not (pos and surf) then return nil end
+
+  for _, c in pairs(storage.colonies or {}) do
+    if c.surface_index == surf.index and c.board_pos and is_same_pos(c.board_pos, pos, 9) then
+      return c
+    end
+  end
+  return nil
+end
+
 -------------------------------------------------
--- colony creation and registration
+-- rejestracja kolonii
 -------------------------------------------------
 
-local function register_colony(surface, pos, kind, currency, mode)
-  if not (surface and surface.valid and pos) then return nil end
-
-  local tradepost = surface.create_entity{
-    name = TRADEPOST_NAME,
-    position = pos,
-    force = BUG_FORCE,
-    create_build_effect_smoke = false
-  }
-
-  if not tradepost then return nil end
-
-  local board = surface.create_entity{
-    name = BOARD_NAME,
-    position = { x = pos.x, y = pos.y - 2 },
-    force = BUG_FORCE,
-    create_build_effect_smoke = false
-  }
+local function register_colony(surface, tradepost, board, kind, currency, mode)
+  if not (surface and surface.valid and tradepost and tradepost.valid) then return nil end
 
   local id = storage.next_colony_id or 1
   storage.next_colony_id = id + 1
@@ -558,7 +544,7 @@ local function register_colony(surface, pos, kind, currency, mode)
   local colony = {
     id            = id,
     pos           = { x = tradepost.position.x, y = tradepost.position.y },
-    board_pos     = { x = board.position.x, y = board.position.y },
+    board_pos     = board and { x = board.position.x, y = board.position.y } or nil,
     surface_index = surface.index,
     tradepost     = tradepost,
     board_entity  = board,
@@ -575,13 +561,80 @@ local function register_colony(surface, pos, kind, currency, mode)
   storage.colonies[id] = colony
   storage.entity_to_colony = storage.entity_to_colony or {}
   if tradepost.unit_number then
-    storage.entity_to_colony[tradepost.unit_number] = colony
+    storage.entity_to_colony[tradepost.unit_number] = id
+  end
+  if board and board.valid and board.unit_number then
+    storage.entity_to_colony[board.unit_number] = id
   end
 
   refresh_board_icons(colony)
-
   return colony
 end
+
+local function make_default_colony(surface, pos)
+  local tradepost = surface.create_entity{
+    name = TRADEPOST_NAME,
+    position = pos,
+    force = BUG_FORCE,
+    create_build_effect_smoke = false
+  }
+  if not tradepost then return nil end
+
+  local board = surface.create_entity{
+    name = BOARD_NAME,
+    position = { x = pos.x, y = pos.y - 2 },
+    force = BUG_FORCE,
+    create_build_effect_smoke = false
+  }
+
+  local kinds = { "metal", "components", "engines", "science" }
+  local kind = kinds[math.random(1, #kinds)]
+  local currency = (math.random() < 0.5) and "sbt-chocolate" or "sbt-alcohol"
+
+  return register_colony(surface, tradepost, board, kind, currency, "normal")
+end
+
+create_or_get_colony_from_board = function(board)
+  if not (board and board.valid) then return nil end
+
+  local existing = find_colony_by_board(board)
+  if existing then
+    existing.board_entity = board
+    existing.board_pos = { x = board.position.x, y = board.position.y }
+    refresh_board_icons(existing)
+    return existing
+  end
+
+  local surface = board.surface
+  if not surface or not surface.valid then return nil end
+
+  local near_list = surface.find_entities_filtered{
+    name = TRADEPOST_NAME,
+    position = board.position,
+    radius = 6
+  }
+  local near = near_list[1]
+  if not (near and near.valid) then
+    return nil
+  end
+
+  local colony = find_colony_by_tradepost(near)
+  if colony then
+    colony.board_entity = board
+    colony.board_pos = { x = board.position.x, y = board.position.y }
+    if board.unit_number then
+      storage.entity_to_colony[board.unit_number] = colony.id
+    end
+    refresh_board_icons(colony)
+    return colony
+  end
+
+  return register_colony(surface, near, board, "generic", "sbt-alcohol", "normal")
+end
+
+-------------------------------------------------
+-- startowe kolonie i paczka
+-------------------------------------------------
 
 local function create_start_colonies()
   local surf = game.surfaces[1]
@@ -592,24 +645,21 @@ local function create_start_colonies()
   local pos1 = surf.find_non_colliding_position(TRADEPOST_NAME, { x = center.x + 20, y = center.y }, 16, 1)
   local pos2 = surf.find_non_colliding_position(TRADEPOST_NAME, { x = center.x - 20, y = center.y }, 16, 1)
 
-  if pos1 then
-    register_colony(surf, pos1, "metal", "sbt-chocolate", "normal")
-  end
-  if pos2 then
-    register_colony(surf, pos2, "science", "sbt-alcohol", "normal")
-  end
+  if pos1 then make_default_colony(surf, pos1) end
+  if pos2 then make_default_colony(surf, pos2) end
 end
 
 local function give_start_pack(player)
   if not player or not player.valid then return end
-
-  player.insert({ name = "sbt-cargo-rover", count = 1 })
-  player.insert({ name = "sbt-chocolate", count = 300 })
-  player.insert({ name = "sbt-alcohol", count = 200 })
+  pcall(function()
+    player.insert({ name = "sbt-cargo-rover", count = 1 })
+    player.insert({ name = "sbt-chocolate",   count = 300 })
+    player.insert({ name = "sbt-alcohol",     count = 200 })
+  end)
 end
 
 -------------------------------------------------
--- dynamic spawn
+-- dynamiczny spawn kolonii
 -------------------------------------------------
 
 local function get_dynamic_spawn_config()
@@ -633,18 +683,14 @@ script.on_event(defines.events.on_chunk_generated, function(e)
       local center = { x = (e.position.x + 0.5) * 32, y = (e.position.y + 0.5) * 32 }
       local pos = surface.find_non_colliding_position(TRADEPOST_NAME, center, 16, 1)
       if pos then
-        local kinds = { "metal", "components", "engines", "science" }
-        local kind = kinds[math.random(1, #kinds)]
-        local currency = (math.random() < 0.5) and "sbt-chocolate" or "sbt-alcohol"
-        local c = register_colony(surface, pos, kind, currency, "normal")
-        if c then c.offers = nil end
+        make_default_colony(surface, pos)
       end
     end
   end
 end)
 
 -------------------------------------------------
--- gui
+-- GUI
 -------------------------------------------------
 
 local function get_player_state(pindex)
@@ -657,7 +703,7 @@ local function get_player_state(pindex)
   return st
 end
 
-local function open_trade_gui(player, colony)
+open_trade_gui = function(player, colony)
   if not player or not player.valid then return end
   if not colony then return end
 
@@ -707,8 +753,8 @@ local function open_trade_gui(player, colony)
 
   local btn_flow = frame.add{ type = "flow", direction = "horizontal" }
   btn_flow.add{
-    type = "button",
-    name = "sbt_trade_close",
+    type    = "button",
+    name    = "sbt_trade_close",
     caption = "Zamknij"
   }
 
@@ -725,8 +771,19 @@ local function close_trade_gui(player)
   end
 end
 
+local function open_board_gui_from_event(player, ent)
+  if not player or not ent or not ent.valid then return end
+  if ent.name ~= BOARD_NAME then return end
+  local colony = create_or_get_colony_from_board(ent)
+  if not colony then return end
+
+  player.opened = nil
+  refresh_board_icons(colony)
+  open_trade_gui(player, colony)
+end
+
 -------------------------------------------------
--- events
+-- events: init, config
 -------------------------------------------------
 
 local function on_init()
@@ -746,6 +803,10 @@ script.on_init(on_init)
 script.on_load(on_load)
 script.on_configuration_changed(on_configuration_changed)
 
+-------------------------------------------------
+-- events: player, budowa, usuniecie
+-------------------------------------------------
+
 script.on_event(defines.events.on_player_created, function(e)
   init_storage()
   ensure_bug_force()
@@ -760,28 +821,15 @@ script.on_event(defines.events.on_built_entity, function(e)
   if not (ent and ent.valid) then return end
 
   if ent.name == BOARD_NAME then
-    local surface = ent.surface
-    local near_list = surface.find_entities_filtered{
-      name = TRADEPOST_NAME,
-      position = ent.position,
-      radius = 6
-    }
-    local near = near_list[1]
-    if near and near.valid then
-      local colony = find_colony_by_entity(near)
-      if not colony then
-        colony = register_colony(surface, near.position, "generic", "sbt-alcohol", "normal")
-      end
-      colony.board_entity = ent
-      colony.board_pos = { x = ent.position.x, y = ent.position.y }
-      refresh_board_icons(colony)
+    local colony = create_or_get_colony_from_board(ent)
+    if colony then
       local player = game.get_player(e.player_index)
       if player then
         open_trade_gui(player, colony)
       end
     end
   elseif ent.name == TRADEPOST_NAME then
-    local colony = find_colony_by_entity(ent)
+    local colony = find_colony_by_tradepost(ent)
     if not colony then
       local surface = ent.surface
       local boards = surface.find_entities_filtered{
@@ -791,18 +839,39 @@ script.on_event(defines.events.on_built_entity, function(e)
       }
       local board = boards[1]
       if board then
-        colony = register_colony(surface, ent.position, "generic", "sbt-alcohol", "normal")
-        colony.board_entity = board
-        colony.board_pos = { x = board.position.x, y = board.position.y }
+        colony = register_colony(surface, ent, board, "generic", "sbt-alcohol", "normal")
+      else
+        colony = register_colony(ent.surface, ent, nil, "generic", "sbt-alcohol", "normal")
       end
-    end
-    if colony then
+    else
       colony.tradepost = ent
       colony.pos = { x = ent.position.x, y = ent.position.y }
       colony.surface_index = ent.surface.index
-      storage.entity_to_colony = storage.entity_to_colony or {}
       if ent.unit_number then
-        storage.entity_to_colony[ent.unit_number] = colony
+        storage.entity_to_colony[ent.unit_number] = colony.id
+      end
+      refresh_board_icons(colony)
+    end
+  end
+end)
+
+script.on_event(defines.events.on_robot_built_entity, function(e)
+  init_storage()
+  local ent = e.created_entity or e.entity
+  if not (ent and ent.valid) then return end
+
+  if ent.name == BOARD_NAME then
+    create_or_get_colony_from_board(ent)
+  elseif ent.name == TRADEPOST_NAME then
+    local colony = find_colony_by_tradepost(ent)
+    if not colony then
+      register_colony(ent.surface, ent, nil, "generic", "sbt-alcohol", "normal")
+    else
+      colony.tradepost = ent
+      colony.pos = { x = ent.position.x, y = ent.position.y }
+      colony.surface_index = ent.surface.index
+      if ent.unit_number then
+        storage.entity_to_colony[ent.unit_number] = colony.id
       end
       refresh_board_icons(colony)
     end
@@ -813,14 +882,25 @@ local function on_entity_removed(ent)
   if not (ent and ent.valid) then return end
 
   if ent.name == BOARD_NAME then
-    local colony = find_colony_by_entity(ent)
+    local colony = find_colony_by_board(ent)
     if colony then
       colony.board_entity = nil
+      colony.board_pos = nil
+      if ent.unit_number and storage.entity_to_colony then
+        storage.entity_to_colony[ent.unit_number] = nil
+      end
       clear_board_icons(colony)
     end
   elseif ent.name == TRADEPOST_NAME then
-    local colony = find_colony_by_entity(ent)
+    local colony = find_colony_by_tradepost(ent)
     if colony and colony.id then
+      if colony.tradepost and colony.tradepost.valid and colony.tradepost.unit_number then
+        storage.entity_to_colony[colony.tradepost.unit_number] = nil
+      end
+      if colony.board_entity and colony.board_entity.valid and colony.board_entity.unit_number then
+        storage.entity_to_colony[colony.board_entity.unit_number] = nil
+      end
+      clear_board_icons(colony)
       storage.colonies[colony.id] = nil
     end
   end
@@ -829,6 +909,10 @@ end
 script.on_event(defines.events.on_entity_died, function(e) on_entity_removed(e.entity) end)
 script.on_event(defines.events.on_pre_player_mined_item, function(e) on_entity_removed(e.entity) end)
 script.on_event(defines.events.on_robot_mined_entity, function(e) on_entity_removed(e.entity) end)
+
+-------------------------------------------------
+-- events: GUI
+-------------------------------------------------
 
 script.on_event(defines.events.on_gui_checked_state_changed, function(e)
   local element = e.element
@@ -859,4 +943,13 @@ script.on_event(defines.events.on_gui_click, function(e)
     close_trade_gui(player)
     return
   end
+end)
+
+script.on_event(defines.events.on_gui_opened, function(e)
+  if e.gui_type ~= defines.gui_type.entity then return end
+  local player = game.get_player(e.player_index)
+  local ent = e.entity
+  if not player or not ent or not ent.valid then return end
+  if ent.name ~= BOARD_NAME then return end
+  open_board_gui_from_event(player, ent)
 end)
