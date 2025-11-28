@@ -1,0 +1,12 @@
+{
+  "name": "factorio-transport-tycoon",
+  "version": "0.2.0",
+  "title": "Factorio Transport Tycoon",
+  "author": "Peter Wolf - https://peterwolf.pl",
+  "factorio_version": "2.0",
+  "dependencies": [
+    "base",
+    "?space-age"
+  ],
+  "description": "Handel z koloniami robali, kontrakty i logistyka pociągów. Waluta jako sygnał wirtualny, reputacja kolonii, tablica kontraktów i placówka wymiany."
+}
