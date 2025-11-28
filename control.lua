@@ -392,6 +392,10 @@ end
 local function get_requested_items_for_colony(colony)
   local requested = {}
   requested = collect_requested_from_entity(colony.board_entity, requested)
+  if not next(requested) then
+    -- allow wiring the tradepost chest directly as a fallback
+    requested = collect_requested_from_entity(colony.tradepost, requested)
+  end
   if next(requested) then
     return requested
   end
