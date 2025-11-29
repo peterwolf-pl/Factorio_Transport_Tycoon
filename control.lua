@@ -377,7 +377,7 @@ local function collect_requested_from_entity(ent, requested)
     local signals = net.signals
     if not signals then return end
     for _, s in pairs(signals) do
-      if s.signal and s.signal.type == "item" and s.count < 0 then
+      if s.signal and s.signal.type == "item" and s.count ~= 0 then
         requested[s.signal.name] = true
       end
     end
