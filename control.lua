@@ -1,7 +1,7 @@
 -- control.lua
 
 local util = require("util")
-local serpent = require("serpent")
+local serpent = require("__core__/lualib/serpent")
 
 -- constants
 local BUG_FORCE      = "bugs-trade"
