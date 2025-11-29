@@ -3,8 +3,8 @@
 Trading now runs **only** from the circuit network. The contract board and tradepost are automatically linked with a green wire when either is placed; attach your own circuit source (for example a constant combinator) anywhere on that network to steer trades.
 
 ## Circuit rules
-- Any non-zero **item signal** selects matching offers (`give.name`). Negative counts (`-100 iron-plate`) are recommended so that added stock in the tradepost does not cancel the request.
-- Signals are **latched** while the wire remains: if the live network sums to zero (e.g., tradepost contents offset a negative request), the last non-zero signals stay active. Disconnect the wire or clear the circuit network to stop trading.
+- Any non-zero **item signal** selects matching offers (`give.name`). Negative counts (`-100 iron-plate`) are recommended.
+- The worker compares live signals with the tradepost inventory. If the chest already holds enough of a signaled item to offset the request (e.g., `-100 iron-plate` signal plus 100 plates in the chest), trading pauses until the stock is removed.
 - GUI checkboxes are ignored; only the wire filter decides which offers the round-robin worker will execute.
 - Ensure the tradepost chest holds the currency listed in the offer cost.
 

@@ -396,7 +396,7 @@ local function scan_circuit_network(net, requested)
   local found = false
   for _, s in pairs(signals) do
     if s.signal and s.signal.type == "item" and s.count ~= 0 then
-      requested[s.signal.name] = s.count
+      requested[s.signal.name] = (requested[s.signal.name] or 0) + s.count
       found = true
     end
   end
@@ -439,29 +439,44 @@ end
 local function get_requested_items_for_colony(colony)
   if not colony then return nil end
 
-  local requested = {}
+  local raw_signals = {}
   local has_network = false
   local has_signal = false
 
-  local req, net, sig = read_requests_from_entity(colony.board_entity, requested)
-  requested, has_network, has_signal = req, (has_network or net), (has_signal or sig)
+  local req, net, sig = read_requests_from_entity(colony.board_entity, raw_signals)
+  raw_signals, has_network, has_signal = req, (has_network or net), (has_signal or sig)
 
-  req, net, sig = read_requests_from_entity(colony.tradepost, requested)
-  requested, has_network, has_signal = req, (has_network or net), (has_signal or sig)
+  req, net, sig = read_requests_from_entity(colony.tradepost, raw_signals)
+  raw_signals, has_network, has_signal = req, (has_network or net), (has_signal or sig)
 
-  if has_signal and next(requested) then
+  if not has_signal then
+    if not has_network then
+      colony.active_requests = nil
+      colony.active_request_tick = nil
+      return nil
+    end
+    return colony.active_requests
+  end
+
+  local inv = (colony.tradepost and colony.tradepost.valid) and colony.tradepost.get_inventory(defines.inventory.chest) or nil
+  local requested = {}
+  for name, count in pairs(raw_signals) do
+    local available = (inv and inv.valid) and inv.get_item_count(name) or 0
+    local deficit = count + available
+    if deficit < 0 then
+      requested[name] = -deficit
+    end
+  end
+
+  if next(requested) then
     colony.active_requests = requested
     colony.active_request_tick = game.tick
     return requested
   end
 
-  if not has_network then
-    colony.active_requests = nil
-    colony.active_request_tick = nil
-    return nil
-  end
-
-  return colony.active_requests
+  colony.active_requests = nil
+  colony.active_request_tick = nil
+  return nil
 end
 
 -------------------------------------------------
@@ -487,7 +502,7 @@ local function process_colony_trade_round_robin(colony)
   for i = 1, #offers do
     local off = offers[i]
     local give_name = off and off.give and off.give.name
-    if give_name and requested[give_name] then
+    if give_name and requested[give_name] and requested[give_name] > 0 then
       table.insert(idxs, i)
     end
   end
@@ -496,6 +511,7 @@ local function process_colony_trade_round_robin(colony)
 
   local function can_apply(off)
     if not off or not off.give or not off.cost then return false end
+    if not (requested[off.give.name] and requested[off.give.name] > 0) then return false end
     if not inv.can_insert({ name = off.give.name, count = off.give.count }) then return false end
 
     for _, c in ipairs(off.cost) do
@@ -521,6 +537,10 @@ local function process_colony_trade_round_robin(colony)
       end
 
       inv.insert({ name = off.give.name, count = off.give.count })
+      requested[off.give.name] = math.max(0, (requested[off.give.name] or 0) - off.give.count)
+      if requested[off.give.name] == 0 then
+        requested[off.give.name] = nil
+      end
       trades = trades + 1
 
       if trades >= 50 then break end
@@ -528,6 +548,7 @@ local function process_colony_trade_round_robin(colony)
   end
 
   colony.rr_index = ((start) % #idxs) + 1
+  colony.active_requests = next(requested) and requested or nil
 end
 
 script.on_nth_tick(60, function()
