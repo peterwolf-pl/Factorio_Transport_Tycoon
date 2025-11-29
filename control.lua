@@ -384,8 +384,13 @@ local function collect_requested_from_entity(ent, requested)
   end
 
   local function get_network(wire_type)
-    return ent.get_circuit_network(wire_type, defines.circuit_connector_id.container)
-      or ent.get_circuit_network(wire_type)
+    local container_id = defines and defines.circuit_connector_id and defines.circuit_connector_id.container
+    if container_id then
+      local network = ent.get_circuit_network(wire_type, container_id)
+      if network then return network end
+    end
+
+    return ent.get_circuit_network(wire_type)
   end
 
   scan_network(get_network(defines.wire_type.red))
