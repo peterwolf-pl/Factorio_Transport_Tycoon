@@ -50,6 +50,26 @@ end
 -- storage init i migracja
 -------------------------------------------------
 
+-------------------------------------------------
+-- circuit network
+-- sterowanie tylko z contract board
+-------------------------------------------------
+
+local function connect_colony_circuit(colony)
+  if not (colony and colony.tradepost and colony.tradepost.valid and colony.board_entity and colony.board_entity.valid) then return end
+  local connector_id = defines and defines.circuit_connector_id and defines.circuit_connector_id.container
+  if not connector_id then return end
+
+  pcall(function()
+    colony.tradepost.connect_neighbour{
+      wire = defines.wire_type.green,
+      target_entity = colony.board_entity,
+      source_circuit_id = connector_id,
+      target_circuit_id = connector_id
+    }
+  end)
+end
+
 local function rebuild_entity_index()
   storage.entity_to_colony = {}
   for id, c in pairs(storage.colonies or {}) do
@@ -366,26 +386,6 @@ end
 refresh_board_icons = function(colony)
   clear_board_icons(colony)
   draw_board_icons(colony)
-end
-
--------------------------------------------------
--- circuit network
--- sterowanie tylko z contract board
--------------------------------------------------
-
-local function connect_colony_circuit(colony)
-  if not (colony and colony.tradepost and colony.tradepost.valid and colony.board_entity and colony.board_entity.valid) then return end
-  local connector_id = defines and defines.circuit_connector_id and defines.circuit_connector_id.container
-  if not connector_id then return end
-
-  pcall(function()
-    colony.tradepost.connect_neighbour{
-      wire = defines.wire_type.green,
-      target_entity = colony.board_entity,
-      source_circuit_id = connector_id,
-      target_circuit_id = connector_id
-    }
-  end)
 end
 
 local function scan_circuit_network(net, requested)
