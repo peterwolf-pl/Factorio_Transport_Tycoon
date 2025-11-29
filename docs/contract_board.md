@@ -14,3 +14,7 @@ Trading now runs **only** from the circuit network. The contract board and trade
 - Multiple simultaneous item signals are allowed; the round-robin handler walks through each matching offer every second.
 
 If trading does not start, double-check the prototype name and that sufficient currency exists in the tradepost inventory.
+
+## Debugging from the console
+- `/ftt-trade-debug on|off|status` toggles verbose wire-trade logging to chat + log file.
+- Select a contract board or tradepost and run `/ftt-trade-dump` to print its validity, positions, circuit signals, active requests, and tradepost chest contents.

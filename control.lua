@@ -27,6 +27,66 @@ local create_or_get_colony_from_board
 local open_trade_gui
 
 -------------------------------------------------
+-- debug helpers
+-------------------------------------------------
+
+local function debug_log(msg, player_index)
+  if not (storage and storage.debug_logging) then return end
+  local line = "[FTT] " .. msg
+  log(line)
+
+  if not game then return end
+  if player_index then
+    local player = game.get_player(player_index)
+    if player and player.valid then
+      player.print(line)
+    end
+    return
+  end
+
+  for _, player in pairs(game.connected_players or {}) do
+    player.print(line)
+  end
+end
+
+local function format_counts(map)
+  local parts = {}
+  if map then
+    for name, count in pairs(map) do
+      table.insert(parts, name .. "=" .. count)
+    end
+  end
+  table.sort(parts)
+  return table.concat(parts, ", ")
+end
+
+local function inventory_counts(inv)
+  local out = {}
+  if inv and inv.valid then
+    for name, count in pairs(inv.get_contents()) do
+      out[name] = count
+    end
+  end
+  return out
+end
+
+local function command_reply(cmd, msg)
+  local line = "[FTT] " .. msg
+  log(line)
+  if not game then return end
+  if cmd and cmd.player_index then
+    local player = game.get_player(cmd.player_index)
+    if player and player.valid then
+      player.print(line)
+    end
+  else
+    for _, player in pairs(game.connected_players or {}) do
+      player.print(line)
+    end
+  end
+end
+
+-------------------------------------------------
 -- helpers: nazwy kolonii
 -------------------------------------------------
 
@@ -148,6 +208,7 @@ local function init_storage()
   storage.next_colony_id    = storage.next_colony_id    or 1
   storage.board_render_objs = storage.board_render_objs or {}
   storage.saved_offers      = storage.saved_offers      or {}
+  storage.debug_logging     = storage.debug_logging     or false
 
   migrate_colonies()
   build_item_caches()
@@ -433,6 +494,10 @@ local function read_requests_from_entity(ent, requested, seen_networks)
   requested, found = scan_circuit_network(green, requested, seen_networks)
   has_signal = has_signal or found
 
+  if found then
+    debug_log((ent.name or "entity") .. " signals: " .. format_counts(requested))
+  end
+
   return requested, has_network, has_signal
 end
 
@@ -452,10 +517,12 @@ local function get_requested_items_for_colony(colony)
 
   if not has_signal then
     if not has_network then
+      debug_log("Colony " .. (colony.id or "?") .. " has no circuit network attached")
       colony.active_requests = nil
       colony.active_request_tick = nil
       return nil
     end
+    debug_log("Colony " .. (colony.id or "?") .. " reusing active requests: " .. format_counts(colony.active_requests))
     return colony.active_requests
   end
 
@@ -473,11 +540,13 @@ local function get_requested_items_for_colony(colony)
   end
 
   if next(requested) then
+    debug_log("Colony " .. (colony.id or "?") .. " requests after stock offset: " .. format_counts(requested))
     colony.active_requests = requested
     colony.active_request_tick = game.tick
     return requested
   end
 
+  debug_log("Colony " .. (colony.id or "?") .. " inventory already satisfies circuit requests")
   colony.active_requests = nil
   colony.active_request_tick = nil
   return nil
@@ -497,6 +566,8 @@ local function process_colony_trade_round_robin(colony)
   local requested = get_requested_items_for_colony(colony)
   if not (requested and next(requested)) then return end
 
+  debug_log("Colony " .. (colony.id or "?") .. " evaluating requests: " .. format_counts(requested))
+
   local offers = get_colony_offers(colony)
   if not offers or #offers == 0 then return end
 
@@ -511,7 +582,10 @@ local function process_colony_trade_round_robin(colony)
     end
   end
 
-  if #idxs == 0 then return end
+  if #idxs == 0 then
+    debug_log("Colony " .. (colony.id or "?") .. " has no offers matching " .. format_counts(requested))
+    return
+  end
 
   local function can_apply(off)
     if not off or not off.give or not off.cost then return false end
@@ -547,7 +621,29 @@ local function process_colony_trade_round_robin(colony)
       end
       trades = trades + 1
 
+      debug_log("Colony " .. (colony.id or "?") .. " trade " .. off.give.name .. " x" .. off.give.count ..
+        " for costs " .. format_counts(off.cost) .. "; remaining " .. format_counts(requested))
+
       if trades >= 50 then break end
+    end
+
+    if trades == 0 then
+      local reason = "unknown"
+      if not off or not off.give or not off.cost then
+        reason = "offer missing data"
+      elseif not (requested[off.give.name] and requested[off.give.name] > 0) then
+        reason = "no remaining request"
+      elseif not inv.can_insert({ name = off.give.name, count = off.give.count }) then
+        reason = "no inventory space"
+      else
+        for _, c in ipairs(off.cost) do
+          if inv.get_item_count(c.name) < c.count then
+            reason = "missing cost " .. c.name
+            break
+          end
+        end
+      end
+      debug_log("Colony " .. (colony.id or "?") .. " skipped offer " .. idx .. " for " .. (off.give and off.give.name or "?") .. " because " .. reason)
     end
   end
 
@@ -609,6 +705,23 @@ find_colony_by_board = function(ent)
     end
   end
   return nil
+end
+
+local function find_colony_from_player_selection(player)
+  if not (player and player.valid) then return nil end
+  local sel = player.selected
+  if not (sel and sel.valid) then return nil end
+  if sel.name == BOARD_NAME then return find_colony_by_board(sel) end
+  if sel.name == TRADEPOST_NAME then return find_colony_by_tradepost(sel) end
+  return nil
+end
+
+local function snapshot_raw_signals(colony)
+  local seen = {}
+  local raw = {}
+  raw = select(1, read_requests_from_entity(colony.board_entity, raw, seen))
+  raw = select(1, read_requests_from_entity(colony.tradepost, raw, seen))
+  return raw
 end
 
 -------------------------------------------------
@@ -875,6 +988,57 @@ local function open_board_gui_from_event(player, ent)
   refresh_board_icons(colony)
   open_trade_gui(player, colony)
 end
+
+-------------------------------------------------
+-- commands: debug i diagnoza
+-------------------------------------------------
+
+local function toggle_debug_logging(cmd)
+  init_storage()
+  local param = cmd.parameter and cmd.parameter:lower() or ""
+  if param == "on" then
+    storage.debug_logging = true
+  elseif param == "off" then
+    storage.debug_logging = false
+  elseif param ~= "status" then
+    storage.debug_logging = not storage.debug_logging
+  end
+
+  local state = storage.debug_logging and "ON" or "OFF"
+  if param == "status" then
+    command_reply(cmd, "Debug logging is " .. state .. ". Use 'on'/'off' to set explicitly.")
+  else
+    command_reply(cmd, "Debug logging set to " .. state .. ".")
+  end
+end
+
+local function dump_trade_state(cmd)
+  init_storage()
+  local player = (cmd.player_index and game) and game.get_player(cmd.player_index) or nil
+  local colony = find_colony_from_player_selection(player)
+  if not colony then
+    command_reply(cmd, "Select a contract board or tradepost before running /ftt-trade-dump.")
+    return
+  end
+
+  local inv = colony.tradepost and colony.tradepost.valid and colony.tradepost.get_inventory(defines.inventory.chest)
+  local raw_signals = snapshot_raw_signals(colony)
+  local requested = get_requested_items_for_colony(colony)
+  local inv_counts = inventory_counts(inv)
+
+  command_reply(cmd, "Colony " .. (colony.id or "?") .. " (" .. (colony.name or "brak nazwy") .. ") kind=" .. (colony.kind or "?") ..
+    " mode=" .. (colony.mode or "?") .. " currency=" .. (colony.currency or "sbt-alcohol"))
+  command_reply(cmd, "Board valid=" .. tostring(colony.board_entity and colony.board_entity.valid) .. " pos=" ..
+    (colony.board_entity and util.positiontostr(colony.board_entity.position) or "nil"))
+  command_reply(cmd, "Tradepost valid=" .. tostring(colony.tradepost and colony.tradepost.valid) .. " pos=" ..
+    (colony.tradepost and util.positiontostr(colony.tradepost.position) or "nil") ..
+    " chest=" .. format_counts(inv_counts))
+  command_reply(cmd, "Circuit signals=" .. format_counts(raw_signals))
+  command_reply(cmd, "Active requests=" .. format_counts(requested or colony.active_requests))
+end
+
+commands.add_command("ftt-trade-debug", "Toggle Factorio Transport Tycoon wire trade debug logging (on/off/status).", toggle_debug_logging)
+commands.add_command("ftt-trade-dump", "Show wire trade info for the selected contract board or tradepost.", dump_trade_state)
 
 -------------------------------------------------
 -- events: init, config
