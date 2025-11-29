@@ -1,6 +1,7 @@
 -- control.lua
 
 local util = require("util")
+local serpent = require("serpent")
 
 -- constants
 local BUG_FORCE      = "bugs-trade"
@@ -53,7 +54,16 @@ local function format_counts(map)
   local parts = {}
   if map then
     for name, count in pairs(map) do
-      table.insert(parts, name .. "=" .. count)
+      local val = count
+      if type(count) == "table" then
+        if count.count then
+          val = count.count
+        else
+          val = serpent.line(count, { comment = false })
+        end
+      end
+
+      table.insert(parts, name .. "=" .. tostring(val))
     end
   end
   table.sort(parts)
