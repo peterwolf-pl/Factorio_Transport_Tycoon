@@ -388,8 +388,12 @@ refresh_board_icons = function(colony)
   draw_board_icons(colony)
 end
 
-local function scan_circuit_network(net, requested)
+local function scan_circuit_network(net, requested, seen)
   if not net then return requested, false end
+  local id = net.network_id
+  if id and seen and seen[id] then return requested, false end
+  if id and seen then seen[id] = true end
+
   local signals = net.signals
   if not signals then return requested, false end
 
@@ -416,7 +420,7 @@ local function get_network(ent, wire_type)
   return ent.get_circuit_network(wire_type)
 end
 
-local function read_requests_from_entity(ent, requested)
+local function read_requests_from_entity(ent, requested, seen_networks)
   local has_network = false
   local has_signal = false
   requested = requested or {}
@@ -427,10 +431,10 @@ local function read_requests_from_entity(ent, requested)
   has_network = has_network or (red ~= nil) or (green ~= nil)
 
   local found = false
-  requested, found = scan_circuit_network(red, requested)
+  requested, found = scan_circuit_network(red, requested, seen_networks)
   has_signal = has_signal or found
 
-  requested, found = scan_circuit_network(green, requested)
+  requested, found = scan_circuit_network(green, requested, seen_networks)
   has_signal = has_signal or found
 
   return requested, has_network, has_signal
@@ -440,13 +444,14 @@ local function get_requested_items_for_colony(colony)
   if not colony then return nil end
 
   local raw_signals = {}
+  local seen_networks = {}
   local has_network = false
   local has_signal = false
 
-  local req, net, sig = read_requests_from_entity(colony.board_entity, raw_signals)
+  local req, net, sig = read_requests_from_entity(colony.board_entity, raw_signals, seen_networks)
   raw_signals, has_network, has_signal = req, (has_network or net), (has_signal or sig)
 
-  req, net, sig = read_requests_from_entity(colony.tradepost, raw_signals)
+  req, net, sig = read_requests_from_entity(colony.tradepost, raw_signals, seen_networks)
   raw_signals, has_network, has_signal = req, (has_network or net), (has_signal or sig)
 
   if not has_signal then
