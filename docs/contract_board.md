@@ -12,6 +12,8 @@ Trades are processed automatically using the round-robin handler that runs every
 - The circuit value can be **positive or negative** (e.g., `1 steel-plate` or `-1 steel-plate`). Any non-zero value triggers the filter.
 - Wire the signal directly to the **contract board**; wiring the tradepost chest
   also works as a fallback if you prefer shorter wires.
+- Signals are read through the container circuit connector, so attach the wire directly
+  to the board or tradepost instead of only to nearby poles.
 - The signaled item has to match the offer's **internal prototype name** (English `steel-plate`, `iron-plate`, etc.), even on non-English clients.
 - Ensure the tradepost has the correct currency items inserted for the matching offer.
 - If multiple items are signaled, round-robin will step through each matching offer automatically without extra configuration.

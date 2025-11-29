@@ -383,8 +383,13 @@ local function collect_requested_from_entity(ent, requested)
     end
   end
 
-  scan_network(ent.get_circuit_network(defines.wire_type.red))
-  scan_network(ent.get_circuit_network(defines.wire_type.green))
+  local function get_network(wire_type)
+    return ent.get_circuit_network(wire_type, defines.circuit_connector_id.container)
+      or ent.get_circuit_network(wire_type)
+  end
+
+  scan_network(get_network(defines.wire_type.red))
+  scan_network(get_network(defines.wire_type.green))
 
   return requested
 end
