@@ -10,6 +10,7 @@ Trading now runs **only** from the circuit network. The contract board and trade
 
 ## Wiring tips
 - Use the built-in green wire link between the board and tradepost; connect your combinators directly to either end of that network.
+- Contract boards and tradeposts now belong to the player force so your combinators can attach normally—if you migrate an old save, the mod will retag the entities automatically.
 - The signal item name must match the **prototype** (`iron-plate`, `steel-plate`, etc.), even on non-English clients.
 - Multiple simultaneous item signals are allowed; the round-robin handler walks through each matching offer every second.
 

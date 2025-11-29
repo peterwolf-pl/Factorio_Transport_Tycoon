@@ -148,6 +148,26 @@ end
 -- sterowanie tylko z contract board
 -------------------------------------------------
 
+local function get_trade_force(surface)
+  if game and game.forces then
+    if game.forces.player then return game.forces.player end
+    local first = next(game.forces)
+    if first then return game.forces[first] end
+  end
+
+  if surface and surface.valid and surface.force then
+    return surface.force
+  end
+end
+
+local function normalize_trade_entity_force(ent)
+  if not (ent and ent.valid) then return end
+  local target = get_trade_force(ent.surface)
+  if target and ent.force ~= target then
+    ent.force = target
+  end
+end
+
 local function connect_colony_circuit(colony)
   if not (colony and colony.tradepost and colony.tradepost.valid and colony.board_entity and colony.board_entity.valid) then return end
   local connector_id = defines and defines.circuit_connector_id and defines.circuit_connector_id.container
@@ -187,6 +207,7 @@ local function migrate_colonies()
     if c.tradepost and c.tradepost.valid then
       c.pos = c.pos or { x = c.tradepost.position.x, y = c.tradepost.position.y }
       c.surface_index = c.surface_index or c.tradepost.surface.index
+      normalize_trade_entity_force(c.tradepost)
     end
 
     c.enabled  = c.enabled  or {}
@@ -199,6 +220,7 @@ local function migrate_colonies()
       c.name = make_colony_name(c.kind or "generic", c.mode or "normal")
     end
 
+    normalize_trade_entity_force(c.board_entity)
     connect_colony_circuit(c)
   end
 
@@ -764,6 +786,9 @@ end
 local function register_colony(surface, tradepost, board, kind, currency, mode)
   if not (surface and surface.valid and tradepost and tradepost.valid) then return nil end
 
+  normalize_trade_entity_force(tradepost)
+  normalize_trade_entity_force(board)
+
   local id = storage.next_colony_id or 1
   storage.next_colony_id = id + 1
 
@@ -801,10 +826,12 @@ local function register_colony(surface, tradepost, board, kind, currency, mode)
 end
 
 local function make_default_colony(surface, pos)
+  local force = get_trade_force(surface)
+
   local tradepost = surface.create_entity{
     name = TRADEPOST_NAME,
     position = pos,
-    force = BUG_FORCE,
+    force = force,
     create_build_effect_smoke = false
   }
   if not tradepost then return nil end
@@ -812,7 +839,7 @@ local function make_default_colony(surface, pos)
   local board = surface.create_entity{
     name = BOARD_NAME,
     position = { x = pos.x, y = pos.y - 2 },
-    force = BUG_FORCE,
+    force = force,
     create_build_effect_smoke = false
   }
 
