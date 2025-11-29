@@ -500,6 +500,18 @@ refresh_board_icons = function(colony)
   draw_board_icons(colony)
 end
 
+local function safe_get_merged_signals(ent, connector_id)
+  if not (ent and ent.valid) then return nil end
+
+  local ok, fn = pcall(function() return ent.get_merged_signals end)
+  if not ok or not fn then return nil end
+
+  local ok_call, merged = pcall(fn, ent, connector_id)
+  if not ok_call then return nil end
+
+  return merged
+end
+
 local function scan_circuit_network(net, requested, seen)
   if not net then return requested, false end
   local id = net.network_id
@@ -521,9 +533,7 @@ local function scan_circuit_network(net, requested, seen)
 end
 
 local function scan_merged_signals(ent, requested, connector_id)
-  if not (ent and ent.valid and ent.get_merged_signals) then return requested, false end
-
-  local merged = ent.get_merged_signals(connector_id)
+  local merged = safe_get_merged_signals(ent, connector_id)
   if not merged then return requested, false end
 
   local found = false
