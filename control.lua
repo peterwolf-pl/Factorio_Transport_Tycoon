@@ -520,6 +520,23 @@ local function scan_circuit_network(net, requested, seen)
   return requested, found
 end
 
+local function scan_merged_signals(ent, requested, connector_id)
+  if not (ent and ent.valid and ent.get_merged_signals) then return requested, false end
+
+  local merged = ent.get_merged_signals(connector_id)
+  if not merged then return requested, false end
+
+  local found = false
+  for _, s in pairs(merged) do
+    if s.signal and s.signal.type == "item" and s.count ~= 0 then
+      requested[s.signal.name] = (requested[s.signal.name] or 0) + s.count
+      found = true
+    end
+  end
+
+  return requested, found
+end
+
 local function get_network(ent, wire_type)
   if not (ent and ent.valid) then return nil end
 
@@ -549,7 +566,20 @@ local function read_requests_from_entity(ent, requested, seen_networks)
   requested, found = scan_circuit_network(green, requested, seen_networks)
   has_signal = has_signal or found
 
-  if found then
+  if not has_signal then
+    local connector_id = defines and defines.circuit_connector_id and defines.circuit_connector_id.container or nil
+    requested, found = scan_merged_signals(ent, requested, connector_id)
+    has_network = has_network or found
+    has_signal = has_signal or found
+
+    if not found and connector_id ~= nil then
+      requested, found = scan_merged_signals(ent, requested, nil)
+      has_network = has_network or found
+      has_signal = has_signal or found
+    end
+  end
+
+  if has_signal then
     debug_log((ent.name or "entity") .. " signals: " .. format_counts(requested))
   end
 
