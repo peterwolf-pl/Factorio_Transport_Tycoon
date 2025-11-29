@@ -462,9 +462,12 @@ local function get_requested_items_for_colony(colony)
   local requested = {}
   for name, count in pairs(raw_signals) do
     local available = (inv and inv.valid) and inv.get_item_count(name) or 0
-    local deficit = count + available
-    if deficit < 0 then
-      requested[name] = -deficit
+    local desired = count
+    if desired < 0 then desired = -desired end
+
+    local deficit = desired - available
+    if deficit > 0 then
+      requested[name] = deficit
     end
   end
 
