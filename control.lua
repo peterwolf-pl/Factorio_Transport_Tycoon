@@ -222,28 +222,9 @@ local function build_random_offers_for_normal_colony(colony)
   if not pool or #pool == 0 then return offers end
 
   local currency = colony.currency or "sbt-alcohol"
-  local count_offers = math.random(6, 18)
-  local used = {}
-
-  local function pick_unique_item()
-    if #pool == 0 then return nil end
-    for _ = 1, #pool do
-      local idx = math.random(1, #pool)
-      local name = pool[idx]
-      if name and not used[name] then
-        used[name] = true
-        return name
-      end
-    end
-    return nil
-  end
-
   local generosity = get_offer_generosity()
 
-  for _ = 1, count_offers do
-    local item = pick_unique_item()
-    if not item then break end
-
+  for _, item in ipairs(pool) do
     local base_amount = math.max(1, math.floor(50 * (0.5 + math.random() * 2.0)))
     base_amount = math.min(base_amount, 400)
 
@@ -287,11 +268,26 @@ get_colony_offers = function(colony)
 
   storage.saved_offers = storage.saved_offers or {}
 
-  if colony.offers then
+  local pool = get_item_pool_for_colony(colony)
+  local function covers_pool(offers)
+    if not (offers and pool) then return false end
+    local names = {}
+    for _, off in ipairs(offers) do
+      if off and off.give and off.give.name then
+        names[off.give.name] = true
+      end
+    end
+    for _, item in ipairs(pool) do
+      if not names[item] then return false end
+    end
+    return true
+  end
+
+  if colony.offers and covers_pool(colony.offers) then
     return colony.offers
   end
 
-  if colony.id and storage.saved_offers[colony.id] then
+  if colony.id and storage.saved_offers[colony.id] and covers_pool(storage.saved_offers[colony.id]) then
     colony.offers = storage.saved_offers[colony.id]
     return colony.offers
   end
