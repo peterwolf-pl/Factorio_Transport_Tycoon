@@ -1,5 +1,4 @@
 -- prototypes/entities.lua
-local util = require("util")
 
 --
 -- Factorio 2.0 zmieniło ścieżki do circuit connector definitions.
@@ -21,18 +20,6 @@ local MOD_NAME = "__factorio-transport-tycoon__"
 local function icon(path)
   return MOD_NAME .. "/graphics/icons/" .. path
 end
-
--- rover - klon bazowego car z minimalnymi zmianami
-local base_car = util.table.deepcopy(data.raw["car"]["car"])
-base_car.name = "sbt-cargo-rover"
-base_car.icon = icon("rover.png")
-base_car.icon_size = 64
-base_car.minable = { mining_time = 0.5, result = "sbt-cargo-rover" }
-base_car.flags = { "placeable-neutral", "player-creation" }
-base_car.inventory_size = 60
-base_car.equipment_grid = nil
-base_car.guns = {}
-base_car.order = "z[sbt]-a[rover]"
 
 -- bug tradepost - pojemnik jak skrzynka z circuit network
 local bug_tradepost = {
@@ -92,7 +79,6 @@ local contract_board = {
 }
 
 data:extend({
-  base_car,
   bug_tradepost,
   contract_board
 })

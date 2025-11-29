@@ -1,26 +1,16 @@
 # Contract board trade signals
 
-Trades are processed automatically using the round-robin handler that runs every second. No manual toggle or setting is required to start the exchange cycle.
+Trading now runs **only** from the circuit network. The contract board and tradepost are automatically linked with a green wire when either is placed; attach your own circuit source (for example a constant combinator) anywhere on that network to steer trades.
 
-### Trading without a selected GUI offer
-- You can leave every offer unchecked in the GUI; connecting wires and sending item signals is enough.
-- Round-robin still runs automatically and will only consider offers whose `give.name` matches the circuit item signals (positive or negative).
-- At least one non-zero item signal must be present; otherwise the board falls back to the GUI selection mode.
-- Verify the tradepost inventory contains the needed currency for those matching offers.
+## Circuit rules
+- Any non-zero **item signal** selects matching offers (`give.name`). Negative counts (`-100 iron-plate`) are recommended so that added stock in the tradepost does not cancel the request.
+- Signals are **latched** while the wire remains: if the live network sums to zero (e.g., tradepost contents offset a negative request), the last non-zero signals stay active. Disconnect the wire or clear the circuit network to stop trading.
+- GUI checkboxes are ignored; only the wire filter decides which offers the round-robin worker will execute.
+- Ensure the tradepost chest holds the currency listed in the offer cost.
 
-### Troubleshooting circuit-only trades
-- The circuit value can be **positive or negative** (e.g., `1 steel-plate` or `-1 steel-plate`). Any non-zero value triggers the filter.
-- Wire the signal directly to the **contract board**; wiring the tradepost chest
-  also works as a fallback if you prefer shorter wires.
-- Signals are read through the container circuit connector, so attach the wire directly
-  to the board or tradepost instead of only to nearby poles.
-- The signaled item has to match the offer's **internal prototype name** (English `steel-plate`, `iron-plate`, etc.), even on non-English clients.
-- Ensure the tradepost has the correct currency items inserted for the matching offer.
-- If multiple items are signaled, round-robin will step through each matching offer automatically without extra configuration.
+## Wiring tips
+- Use the built-in green wire link between the board and tradepost; connect your combinators directly to either end of that network.
+- The signal item name must match the **prototype** (`iron-plate`, `steel-plate`, etc.), even on non-English clients.
+- Multiple simultaneous item signals are allowed; the round-robin handler walks through each matching offer every second.
 
-To target specific offers via the circuit network:
-- Connect wires directly to the **contract board** entity.
-- Send **non-zero item signals** (positive or negative) matching the internal item prototype name of the offered item (e.g., `iron-plate`).
-- When signals are present, GUI toggles are ignored and only offers that match the signaled item names are eligible for processing.
-
-If trading does not start, verify that the signal uses the exact prototype name and that the tradepost inventory contains the required currency for the selected offer.
+If trading does not start, double-check the prototype name and that sufficient currency exists in the tradepost inventory.

@@ -19,6 +19,7 @@ local PX_PER_TILE  = 32
 local clear_board_icons
 local draw_board_icons
 local refresh_board_icons
+local connect_colony_circuit
 local get_colony_offers
 local find_colony_by_tradepost
 local find_colony_by_board
@@ -78,10 +79,14 @@ local function migrate_colonies()
     c.enabled  = c.enabled  or {}
     c.partial  = c.partial  or {}
     c.rr_index = c.rr_index or 1
+    c.active_requests = c.active_requests or nil
+    c.active_request_tick = c.active_request_tick or nil
 
     if type(c.name) ~= "string" then
       c.name = make_colony_name(c.kind or "generic", c.mode or "normal")
     end
+
+    connect_colony_circuit(c)
   end
 
   rebuild_entity_index()
@@ -368,48 +373,95 @@ end
 -- sterowanie tylko z contract board
 -------------------------------------------------
 
-local function collect_requested_from_entity(ent, requested)
-  if not (ent and ent.valid) then return requested end
+local function connect_colony_circuit(colony)
+  if not (colony and colony.tradepost and colony.tradepost.valid and colony.board_entity and colony.board_entity.valid) then return end
+  local connector_id = defines and defines.circuit_connector_id and defines.circuit_connector_id.container
+  if not connector_id then return end
+
+  pcall(function()
+    colony.tradepost.connect_neighbour{
+      wire = defines.wire_type.green,
+      target_entity = colony.board_entity,
+      source_circuit_id = connector_id,
+      target_circuit_id = connector_id
+    }
+  end)
+end
+
+local function scan_circuit_network(net, requested)
+  if not net then return requested, false end
+  local signals = net.signals
+  if not signals then return requested, false end
+
+  local found = false
+  for _, s in pairs(signals) do
+    if s.signal and s.signal.type == "item" and s.count ~= 0 then
+      requested[s.signal.name] = s.count
+      found = true
+    end
+  end
+
+  return requested, found
+end
+
+local function get_network(ent, wire_type)
+  if not (ent and ent.valid) then return nil end
+
+  local connector_id = defines and defines.circuit_connector_id and defines.circuit_connector_id.container
+  if connector_id then
+    local net = ent.get_circuit_network(wire_type, connector_id)
+    if net then return net end
+  end
+
+  return ent.get_circuit_network(wire_type)
+end
+
+local function read_requests_from_entity(ent, requested)
+  local has_network = false
+  local has_signal = false
   requested = requested or {}
 
-  local function scan_network(net)
-    if not net then return end
-    local signals = net.signals
-    if not signals then return end
-    for _, s in pairs(signals) do
-      if s.signal and s.signal.type == "item" and s.count ~= 0 then
-        requested[s.signal.name] = true
-      end
-    end
-  end
+  local red = get_network(ent, defines.wire_type.red)
+  local green = get_network(ent, defines.wire_type.green)
 
-  local function get_network(wire_type)
-    local container_id = defines and defines.circuit_connector_id and defines.circuit_connector_id.container
-    if container_id then
-      local network = ent.get_circuit_network(wire_type, container_id)
-      if network then return network end
-    end
+  has_network = has_network or (red ~= nil) or (green ~= nil)
 
-    return ent.get_circuit_network(wire_type)
-  end
+  local found = false
+  requested, found = scan_circuit_network(red, requested)
+  has_signal = has_signal or found
 
-  scan_network(get_network(defines.wire_type.red))
-  scan_network(get_network(defines.wire_type.green))
+  requested, found = scan_circuit_network(green, requested)
+  has_signal = has_signal or found
 
-  return requested
+  return requested, has_network, has_signal
 end
 
 local function get_requested_items_for_colony(colony)
+  if not colony then return nil end
+
   local requested = {}
-  requested = collect_requested_from_entity(colony.board_entity, requested)
-  if not next(requested) then
-    -- allow wiring the tradepost chest directly as a fallback
-    requested = collect_requested_from_entity(colony.tradepost, requested)
-  end
-  if next(requested) then
+  local has_network = false
+  local has_signal = false
+
+  local req, net, sig = read_requests_from_entity(colony.board_entity, requested)
+  requested, has_network, has_signal = req, (has_network or net), (has_signal or sig)
+
+  req, net, sig = read_requests_from_entity(colony.tradepost, requested)
+  requested, has_network, has_signal = req, (has_network or net), (has_signal or sig)
+
+  if has_signal and next(requested) then
+    colony.active_requests = requested
+    colony.active_request_tick = game.tick
     return requested
   end
-  return nil
+
+  if not has_network then
+    colony.active_requests = nil
+    colony.active_request_tick = nil
+    return nil
+  end
+
+  return colony.active_requests
 end
 
 -------------------------------------------------
@@ -423,37 +475,37 @@ local function process_colony_trade_round_robin(colony)
   local inv = ent.get_inventory(defines.inventory.chest)
   if not (inv and inv.valid) then return end
 
+  local requested = get_requested_items_for_colony(colony)
+  if not (requested and next(requested)) then return end
+
   local offers = get_colony_offers(colony)
   if not offers or #offers == 0 then return end
 
-  colony.enabled  = colony.enabled  or {}
-  colony.partial  = colony.partial  or {}
   colony.rr_index = colony.rr_index or 1
 
-  local requested = get_requested_items_for_colony(colony)
-  local restrict_by_request = requested ~= nil
-
   local idxs = {}
-
   for i = 1, #offers do
     local off = offers[i]
     local give_name = off and off.give and off.give.name
-
-    if restrict_by_request then
-      -- jest sygnal z contract board
-      -- wystarczy ujemny sygnal give.name, GUI ignorowane
-      if give_name and requested[give_name] then
-        table.insert(idxs, i)
-      end
-    else
-      -- brak sygnalu, dziala stary tryb z GUI
-      if colony.enabled[i] ~= false then
-        table.insert(idxs, i)
-      end
+    if give_name and requested[give_name] then
+      table.insert(idxs, i)
     end
   end
 
   if #idxs == 0 then return end
+
+  local function can_apply(off)
+    if not off or not off.give or not off.cost then return false end
+    if not inv.can_insert({ name = off.give.name, count = off.give.count }) then return false end
+
+    for _, c in ipairs(off.cost) do
+      if inv.get_item_count(c.name) < c.count then
+        return false
+      end
+    end
+
+    return true
+  end
 
   local start = colony.rr_index
   if start < 1 or start > #idxs then start = 1 end
@@ -461,40 +513,17 @@ local function process_colony_trade_round_robin(colony)
   for step = 1, #idxs do
     local idx = idxs[((start - 1 + step - 1) % #idxs) + 1]
     local off = offers[idx]
-    if off and off.give and off.cost and #off.cost > 0 then
-      if #off.cost == 1 then
-        local cost = off.cost[1]
-        local cur_name = cost.name
-        if inv.get_item_count(cur_name) > 0 then
-          inv.remove({ name = cur_name, count = 1 })
-          local partial = colony.partial[idx] or 0
-          partial = partial + 1
-          if partial >= cost.count then
-            if inv.can_insert({ name = off.give.name, count = off.give.count }) then
-              inv.insert({ name = off.give.name, count = off.give.count })
-              partial = partial - cost.count
-            else
-              inv.insert({ name = cur_name, count = 1 })
-              partial = partial - 1
-            end
-          end
-          colony.partial[idx] = math.max(0, partial)
-        end
-      else
-        local can_pay = true
-        for _, c in ipairs(off.cost) do
-          if inv.get_item_count(c.name) < c.count then
-            can_pay = false
-            break
-          end
-        end
-        if can_pay and inv.can_insert({ name = off.give.name, count = off.give.count }) then
-          for _, c in ipairs(off.cost) do
-            inv.remove({ name = c.name, count = c.count })
-          end
-          inv.insert({ name = off.give.name, count = off.give.count })
-        end
+    local trades = 0
+
+    while can_apply(off) do
+      for _, c in ipairs(off.cost) do
+        inv.remove({ name = c.name, count = c.count })
       end
+
+      inv.insert({ name = off.give.name, count = off.give.count })
+      trades = trades + 1
+
+      if trades >= 50 then break end
     end
   end
 
@@ -577,6 +606,8 @@ local function register_colony(surface, tradepost, board, kind, currency, mode)
     enabled       = {},
     partial       = {},
     rr_index      = 1,
+    active_requests = nil,
+    active_request_tick = nil,
     kind          = kind or "generic",
     mode          = mode or "normal",
     currency      = currency or "sbt-alcohol"
@@ -593,6 +624,7 @@ local function register_colony(surface, tradepost, board, kind, currency, mode)
     storage.entity_to_colony[board.unit_number] = id
   end
 
+  connect_colony_circuit(colony)
   refresh_board_icons(colony)
   return colony
 end
@@ -627,6 +659,7 @@ create_or_get_colony_from_board = function(board)
   if existing then
     existing.board_entity = board
     existing.board_pos = { x = board.position.x, y = board.position.y }
+    connect_colony_circuit(existing)
     refresh_board_icons(existing)
     return existing
   end
@@ -651,6 +684,7 @@ create_or_get_colony_from_board = function(board)
     if board.unit_number then
       storage.entity_to_colony[board.unit_number] = colony.id
     end
+    connect_colony_circuit(colony)
     refresh_board_icons(colony)
     return colony
   end
@@ -678,7 +712,6 @@ end
 local function give_start_pack(player)
   if not player or not player.valid then return end
   pcall(function()
-    player.insert({ name = "sbt-cargo-rover", count = 1 })
     player.insert({ name = "sbt-chocolate",   count = 300 })
     player.insert({ name = "sbt-alcohol",     count = 200 })
   end)
@@ -886,6 +919,7 @@ script.on_event(defines.events.on_built_entity, function(e)
       if ent.unit_number then
         storage.entity_to_colony[ent.unit_number] = colony.id
       end
+      connect_colony_circuit(colony)
       refresh_board_icons(colony)
     end
   end
@@ -909,6 +943,7 @@ script.on_event(defines.events.on_robot_built_entity, function(e)
       if ent.unit_number then
         storage.entity_to_colony[ent.unit_number] = colony.id
       end
+      connect_colony_circuit(colony)
       refresh_board_icons(colony)
     end
   end
