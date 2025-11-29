@@ -1,6 +1,20 @@
 -- prototypes/entities.lua
 local util = require("util")
-local circuit_connector_definitions = require("__base__/prototypes/entity/circuit-connector-definitions")
+
+--
+-- Factorio 2.0 zmieniło ścieżki do circuit connector definitions.
+-- Używamy bezpiecznego ładowania, żeby mod działał niezależnie od
+-- tego, czy definicje są już dostępne globalnie, czy trzeba je
+-- załadować z bazowego moda.
+--
+local circuit_connector_definitions = _G.circuit_connector_definitions
+if not circuit_connector_definitions then
+  local ok, defs = pcall(require, "__base__/prototypes/entity/circuit-connector-definitions")
+  if ok then circuit_connector_definitions = defs end
+end
+if not circuit_connector_definitions then
+  error("Brak circuit connector definitions (base/prototypes/entity/circuit-connector-definitions.lua)")
+end
 
 local MOD_NAME = "__factorio-transport-tycoon__"
 
