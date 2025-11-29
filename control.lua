@@ -168,17 +168,41 @@ local function normalize_trade_entity_force(ent)
   end
 end
 
+local function container_connector_ids()
+  local out = {}
+  local ids = defines and defines.circuit_connector_id or nil
+  if not ids then return out end
+
+  local cand = { ids.container, ids.chest, ids.accumulator }
+  for _, id in ipairs(cand) do
+    if id ~= nil then table.insert(out, id) end
+  end
+
+  return out
+end
+
 local function connect_colony_circuit(colony)
   if not (colony and colony.tradepost and colony.tradepost.valid and colony.board_entity and colony.board_entity.valid) then return end
-  local connector_id = defines and defines.circuit_connector_id and defines.circuit_connector_id.container
-  if not connector_id then return end
 
+  local ids = container_connector_ids()
+
+  for _, id in ipairs(ids) do
+    local ok = pcall(function()
+      colony.tradepost.connect_neighbour{
+        wire = defines.wire_type.green,
+        target_entity = colony.board_entity,
+        source_circuit_id = id,
+        target_circuit_id = id
+      }
+    end)
+    if ok then return end
+  end
+
+  -- last resort: try without explicit connector ids
   pcall(function()
     colony.tradepost.connect_neighbour{
       wire = defines.wire_type.green,
-      target_entity = colony.board_entity,
-      source_circuit_id = connector_id,
-      target_circuit_id = connector_id
+      target_entity = colony.board_entity
     }
   end)
 end
@@ -532,8 +556,17 @@ local function scan_circuit_network(net, requested, seen)
   return requested, found
 end
 
-local function scan_merged_signals(ent, requested, connector_id)
-  local merged = safe_get_merged_signals(ent, connector_id)
+local function scan_merged_signals(ent, requested, connector_ids)
+  if not connector_ids or #connector_ids == 0 then
+    connector_ids = { nil }
+  end
+
+  local merged
+  for _, id in ipairs(connector_ids) do
+    merged = safe_get_merged_signals(ent, id)
+    if merged then break end
+  end
+
   if not merged then return requested, false end
 
   local found = false
@@ -550,9 +583,9 @@ end
 local function get_network(ent, wire_type)
   if not (ent and ent.valid) then return nil end
 
-  local connector_id = defines and defines.circuit_connector_id and defines.circuit_connector_id.container
-  if connector_id then
-    local net = ent.get_circuit_network(wire_type, connector_id)
+  local ids = container_connector_ids()
+  for _, id in ipairs(ids) do
+    local net = ent.get_circuit_network(wire_type, id)
     if net then return net end
   end
 
@@ -577,16 +610,10 @@ local function read_requests_from_entity(ent, requested, seen_networks)
   has_signal = has_signal or found
 
   if not has_signal then
-    local connector_id = defines and defines.circuit_connector_id and defines.circuit_connector_id.container or nil
-    requested, found = scan_merged_signals(ent, requested, connector_id)
+    local connector_ids = container_connector_ids()
+    requested, found = scan_merged_signals(ent, requested, connector_ids)
     has_network = has_network or found
     has_signal = has_signal or found
-
-    if not found and connector_id ~= nil then
-      requested, found = scan_merged_signals(ent, requested, nil)
-      has_network = has_network or found
-      has_signal = has_signal or found
-    end
   end
 
   if has_signal then
