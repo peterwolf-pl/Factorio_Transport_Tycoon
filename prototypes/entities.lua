@@ -1,6 +1,6 @@
 -- prototypes/entities.lua
 local util = require("util")
-local circuit_connector_definitions = require("prototypes.entity.circuit-connector-definitions")
+local circuit_connector_definitions = require("__base__/prototypes/entity/circuit-connector-definitions")
 
 local MOD_NAME = "__factorio-transport-tycoon__"
 
