@@ -1,7 +1,30 @@
 -- control.lua
 
 local util = require("util")
-local serpent = require("__core__/lualib/serpent")
+local function serialize(value, seen, depth)
+  seen = seen or {}
+  depth = depth or 0
+
+  local t = type(value)
+  if t == "table" then
+    if seen[value] then
+      return "<recursion>"
+    end
+    if depth > 4 then
+      return "<max-depth>"
+    end
+
+    seen[value] = true
+    local parts = {}
+    for k, v in pairs(value) do
+      table.insert(parts, tostring(k) .. "=" .. serialize(v, seen, depth + 1))
+    end
+    table.sort(parts)
+    return "{" .. table.concat(parts, ", ") .. "}"
+  end
+
+  return tostring(value)
+end
 
 -- constants
 local BUG_FORCE      = "bugs-trade"
@@ -59,7 +82,7 @@ local function format_counts(map)
         if count.count then
           val = count.count
         else
-          val = serpent.line(count, { comment = false })
+          val = serialize(count)
         end
       end
 
