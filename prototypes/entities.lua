@@ -1,5 +1,6 @@
 -- prototypes/entities.lua
 local util = require("util")
+local circuit_connector_definitions = require("prototypes.entity.circuit-connector-definitions")
 
 local MOD_NAME = "__factorio-transport-tycoon__"
 
@@ -69,7 +70,11 @@ local contract_board = {
     scale = 0.5
   },
   open_sound = { filename = "__base__/sound/wooden-chest-open.ogg", volume = 0.7 },
-  close_sound = { filename = "__base__/sound/wooden-chest-close.ogg", volume = 0.7 }
+  close_sound = { filename = "__base__/sound/wooden-chest-close.ogg", volume = 0.7 },
+
+  circuit_wire_connection_point = circuit_connector_definitions["chest"].points,
+  circuit_connector_sprites = circuit_connector_definitions["chest"].sprites,
+  circuit_wire_max_distance = 12
 }
 
 data:extend({
