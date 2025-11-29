@@ -4,7 +4,5 @@ data:extend({
   { type="item", name="sbt-chocolate", icon=icon("chocolate.png"), icon_size=64, stack_size=100, subgroup="intermediate-product" },
   { type="item", name="sbt-alcohol",   icon=icon("alcohol.png"), icon_size=64, stack_size=100, subgroup="intermediate-product" },
   { type="item", name="sbt-credit-note", icon=icon("credit.png"), icon_size=64, stack_size=100, flags={"hidden"} },
-  { type="virtual-signal", name="sbt-credits", icon=icon("credit.png"), icon_size=64, subgroup="virtual-signal-number" },
-
-  { type="item", name="sbt-cargo-rover", icon=icon("rover.png"), icon_size=64, place_result="sbt-cargo-rover", stack_size=1, subgroup="transport" }
+  { type="virtual-signal", name="sbt-credits", icon=icon("credit.png"), icon_size=64, subgroup="virtual-signal-number" }
 })

@@ -1,23 +1,25 @@
 -- prototypes/entities.lua
-local util = require("util")
+
+--
+-- Factorio 2.0 zmieniło ścieżki do circuit connector definitions.
+-- Używamy bezpiecznego ładowania, żeby mod działał niezależnie od
+-- tego, czy definicje są już dostępne globalnie, czy trzeba je
+-- załadować z bazowego moda.
+--
+local circuit_connector_definitions = _G.circuit_connector_definitions
+if not circuit_connector_definitions then
+  local ok, defs = pcall(require, "__base__/prototypes/entity/circuit-connector-definitions")
+  if ok then circuit_connector_definitions = defs end
+end
+if not circuit_connector_definitions then
+  error("Brak circuit connector definitions (base/prototypes/entity/circuit-connector-definitions.lua)")
+end
 
 local MOD_NAME = "__factorio-transport-tycoon__"
 
 local function icon(path)
   return MOD_NAME .. "/graphics/icons/" .. path
 end
-
--- rover - klon bazowego car z minimalnymi zmianami
-local base_car = util.table.deepcopy(data.raw["car"]["car"])
-base_car.name = "sbt-cargo-rover"
-base_car.icon = icon("rover.png")
-base_car.icon_size = 64
-base_car.minable = { mining_time = 0.5, result = "sbt-cargo-rover" }
-base_car.flags = { "placeable-neutral", "player-creation" }
-base_car.inventory_size = 60
-base_car.equipment_grid = nil
-base_car.guns = {}
-base_car.order = "z[sbt]-a[rover]"
 
 -- bug tradepost - pojemnik jak skrzynka z circuit network
 local bug_tradepost = {
@@ -69,11 +71,14 @@ local contract_board = {
     scale = 0.5
   },
   open_sound = { filename = "__base__/sound/wooden-chest-open.ogg", volume = 0.7 },
-  close_sound = { filename = "__base__/sound/wooden-chest-close.ogg", volume = 0.7 }
+  close_sound = { filename = "__base__/sound/wooden-chest-close.ogg", volume = 0.7 },
+
+  circuit_wire_connection_point = circuit_connector_definitions["chest"].points,
+  circuit_connector_sprites = circuit_connector_definitions["chest"].sprites,
+  circuit_wire_max_distance = 12
 }
 
 data:extend({
-  base_car,
   bug_tradepost,
   contract_board
 })

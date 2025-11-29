@@ -31,21 +31,5 @@ data:extend({
     },
     allow_as_intermediate = true,
     allow_decomposition = true
-  },
-  {
-    type = "recipe",
-    name = "sbt-cargo-rover",
-    enabled = true,                            -- odblokuje technologia
-    energy_required = 10,
-    category = "crafting",
-    ingredients = {
-      {type = "item", name = "iron-plate",        amount = 2},
-      
-    },
-    results = {
-      {type = "item", name = "sbt-cargo-rover", amount = 1}
-    },
-    allow_as_intermediate = false,
-    allow_decomposition = false
   }
 })

@@ -10,8 +10,7 @@ data:extend({
     icon_size = 64,
     effects = {
       { type = "unlock-recipe", recipe = "sbt-chocolate" },
-      { type = "unlock-recipe", recipe = "sbt-alcohol" },
-      { type = "unlock-recipe", recipe = "sbt-cargo-rover" }
+      { type = "unlock-recipe", recipe = "sbt-alcohol" }
     },
     unit = {
       count = 1,
